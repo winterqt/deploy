@@ -142,18 +142,18 @@ fn main() -> Result<()> {
             bail!("Authentication failed");
         }
 
-        let tmpdir = PathBuf::from(ssh.run("mktemp -d", &[], false)?);
+        let tmpdir = PathBuf::from(ssh.run("mktemp -d", &[], true)?);
 
-        ssh.run(&format!("tar -C {:?} -xf -", tmpdir), &archive, false)?;
+        ssh.run(&format!("tar -C {:?} -xf -", tmpdir), &archive, true)?;
 
         let rebuild_res = ssh.run(
             &format!("sudo nixos-rebuild {} --flake {:?} -L", args.action, tmpdir),
             &[],
-            !args.quiet,
+            args.quiet,
         );
 
         // SFTP_FXP_RMDIR may fail if the specified directory is not empty, so we just use `rm`
-        ssh.run(&format!("rm -r {:?}", tmpdir), &[], false)?;
+        ssh.run(&format!("rm -r {:?}", tmpdir), &[], true)?;
 
         rebuild_res?;
 

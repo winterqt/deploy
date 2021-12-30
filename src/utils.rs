@@ -15,11 +15,11 @@ pub fn check_hosts(known_hosts: &KnownHosts, hosts: &[&str], key: &[u8]) -> Chec
 }
 
 pub trait SessionExt {
-    fn run(&mut self, cmd: &str, stdin: &[u8], dual: bool) -> Result<String>;
+    fn run(&mut self, cmd: &str, stdin: &[u8], return_output: bool) -> Result<String>;
 }
 
 impl SessionExt for Session {
-    fn run(&mut self, cmd: &str, stdin: &[u8], dual: bool) -> Result<String> {
+    fn run(&mut self, cmd: &str, stdin: &[u8], return_output: bool) -> Result<String> {
         let mut channel = self.channel_session()?;
         channel.handle_extended_data(ExtendedData::Merge)?;
 
@@ -31,13 +31,10 @@ impl SessionExt for Session {
 
         let mut output = String::new();
 
-        if dual {
-            let mut ov = Vec::new();
-            let mut writer = DualWriter::new(&mut ov, stdout());
-            io::copy(&mut channel, &mut writer)?;
-            output = String::from_utf8(ov)?;
-        } else {
+        if return_output {
             channel.read_to_string(&mut output)?;
+        } else {
+            io::copy(&mut channel, &mut stdout())?;
         }
 
         channel.wait_close()?;
@@ -45,56 +42,18 @@ impl SessionExt for Session {
 
         let status = channel.exit_status()?;
         if status != 0 {
-            if dual {
-                bail!("`{}` returned exit status {}", cmd, status);
+            if return_output {
+                bail!(
+                    "`{}` returned exit status {}\noutput: {}",
+                    cmd,
+                    status,
+                    output
+                );
             }
 
-            bail!(
-                "`{}` returned exit status {}\noutput: {}",
-                cmd,
-                status,
-                output
-            );
+            bail!("`{}` returned exit status {}", cmd, status);
         }
 
         Ok(output.trim().to_string())
-    }
-}
-
-struct DualWriter<A, B>
-where
-    A: Write,
-    B: Write,
-{
-    a: A,
-    b: B,
-}
-
-impl<A, B> DualWriter<A, B>
-where
-    A: Write,
-    B: Write,
-{
-    fn new(a: A, b: B) -> DualWriter<A, B> {
-        DualWriter { a, b }
-    }
-}
-
-impl<A, B> Write for DualWriter<A, B>
-where
-    A: Write,
-    B: Write,
-{
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let a = self.a.write(buf)?;
-        let b = self.b.write(buf)?;
-        assert_eq!(a, b);
-        Ok(a)
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        self.a.flush()?;
-        self.b.flush()?;
-        Ok(())
     }
 }
