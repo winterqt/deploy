@@ -1,4 +1,5 @@
 #![warn(clippy::pedantic)]
+#![allow(clippy::too_many_lines)]
 
 use anyhow::{bail, Result};
 use clap::Parser;
@@ -14,7 +15,7 @@ use std::{
     path::PathBuf,
     process::Command,
 };
-use utils::{check_hosts, SessionExt};
+use utils::{check_hosts, get_identities, SessionExt};
 use walkdir::WalkDir;
 
 mod cli;
@@ -28,6 +29,7 @@ struct Host {
     port: u16,
     #[serde(default = "default_user")]
     user: String,
+    identity: Option<String>,
 }
 
 impl Host {
@@ -95,6 +97,17 @@ fn main() -> Result<()> {
             .map(String::from)
             .collect();
 
+    let identities = if args
+        .hosts
+        .iter()
+        .map(|arg| hosts.get(arg).unwrap())
+        .any(|h| h.identity.is_some())
+    {
+        get_identities()?
+    } else {
+        HashMap::new()
+    };
+
     for (hostname, host) in args.hosts.iter().map(|arg| (arg, hosts.get(arg).unwrap())) {
         if args.quiet {
             print!("deploying {}... ", hostname);
@@ -136,7 +149,17 @@ fn main() -> Result<()> {
             CheckResult::Failure => bail!("couldn't check known hosts?"),
         }
 
-        ssh.userauth_agent(&host.user)?;
+        if let Some(identity) = &host.identity {
+            let mut agent = ssh.agent()?;
+            agent.connect()?;
+            agent.list_identities()?;
+            agent.userauth(
+                &host.user,
+                identities.get(&base64::decode(identity)?).unwrap(),
+            )?;
+        } else {
+            ssh.userauth_agent(&host.user)?;
+        }
 
         if !ssh.authenticated() {
             bail!("Authentication failed");

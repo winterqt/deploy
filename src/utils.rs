@@ -1,6 +1,10 @@
 use anyhow::{bail, Result};
-use ssh2::{CheckResult, ExtendedData, KnownHosts, Session};
-use std::io::{self, stdout, Read, Write};
+use sha2::{Digest, Sha256};
+use ssh2::{CheckResult, ExtendedData, KnownHosts, PublicKey, Session};
+use std::{
+    collections::HashMap,
+    io::{self, stdout, Read, Write},
+};
 
 pub fn check_hosts(known_hosts: &KnownHosts, hosts: &[&str], key: &[u8]) -> CheckResult {
     for host in hosts {
@@ -12,6 +16,22 @@ pub fn check_hosts(known_hosts: &KnownHosts, hosts: &[&str], key: &[u8]) -> Chec
     }
 
     CheckResult::NotFound
+}
+
+pub fn get_identities() -> Result<HashMap<Vec<u8>, PublicKey>> {
+    let session = Session::new()?;
+
+    let mut agent = session.agent()?;
+    agent.connect()?;
+    agent.list_identities()?;
+
+    let mut keys = HashMap::new();
+
+    for identity in agent.identities()? {
+        keys.insert(Sha256::digest(identity.blob()).as_slice().into(), identity);
+    }
+
+    Ok(keys)
 }
 
 pub trait SessionExt {
