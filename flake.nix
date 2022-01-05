@@ -5,26 +5,25 @@
   outputs = { self, nixpkgs, flake-utils }: flake-utils.lib.eachDefaultSystem (system:
     let
       pkgs = nixpkgs.legacyPackages.${system};
+      lib = pkgs.lib;
     in
     {
-      packages.deploy = pkgs.callPackage
-        ({ lib, stdenv, rustPlatform, pkg-config, openssl, SystemConfiguration, installShellFiles }:
-          rustPlatform.buildRustPackage {
-            pname = "deploy";
-            version = (lib.importTOML ./Cargo.toml).package.version;
+      packages.deploy = pkgs.rustPlatform.buildRustPackage {
+        pname = "deploy";
+        version = (lib.importTOML ./Cargo.toml).package.version;
 
-            src = ./.;
-            cargoLock.lockFile = ./Cargo.lock;
+        src = self;
+        cargoLock.lockFile = ./Cargo.lock;
 
-            nativeBuildInputs = [ pkg-config installShellFiles ];
-            buildInputs = [ openssl ] ++ lib.optional stdenv.isDarwin SystemConfiguration;
+        nativeBuildInputs = with pkgs; [ pkg-config installShellFiles ];
+        buildInputs = with pkgs; [ openssl ] ++ lib.optional stdenv.isDarwin darwin.apple_sdk.frameworks.SystemConfiguration;
 
-            postInstall = ''
-              installShellCompletion $releaseDir/build/deploy-*/out/deploy.{bash,fish} \
-                --zsh $releaseDir/build/deploy-*/out/_deploy
-            '';
-          })
-        { inherit (pkgs.darwin.apple_sdk.frameworks) SystemConfiguration; };
+        postInstall = ''
+          installShellCompletion $releaseDir/build/deploy-*/out/deploy.{bash,fish} \
+            --zsh $releaseDir/build/deploy-*/out/_deploy
+        '';
+      };
+
       defaultPackage = self.packages.${system}.deploy;
 
       devShell = pkgs.mkShell {
